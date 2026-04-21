@@ -1,0 +1,327 @@
+services:
+
+  # ─── PostgreSQL — one database per service ───────────────────────────────────
+
+  postgres-auth:
+    image: postgres:16-alpine
+    container_name: postgres-auth
+    environment:
+      POSTGRES_DB: ${AUTH_DB_NAME}
+      POSTGRES_USER: ${AUTH_DB_USER}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD}
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres-auth-data:/var/lib/postgresql/data
+    networks:
+      - banking-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTH_DB_USER} -d ${AUTH_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-account:
+    profiles: [account, fraud]
+    image: postgres:16-alpine
+    container_name: postgres-account
+    environment:
+      POSTGRES_DB: ${ACCOUNT_DB_NAME}
+      POSTGRES_USER: ${ACCOUNT_DB_USER}
+      POSTGRES_PASSWORD: ${ACCOUNT_DB_PASSWORD}
+    ports:
+      - "${ACCOUNT_DB_PORT}:5432"
+    volumes:
+      - postgres-account-data:/var/lib/postgresql/data
+    networks:
+      - banking-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ACCOUNT_DB_USER} -d ${ACCOUNT_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-transaction:
+    profiles: [transaction]
+    image: postgres:16-alpine
+    container_name: postgres-transaction
+    environment:
+      POSTGRES_DB: ${TRANSACTION_DB_NAME}
+      POSTGRES_USER: ${TRANSACTION_DB_USER}
+      POSTGRES_PASSWORD: ${TRANSACTION_DB_PASSWORD}
+    ports:
+      - "${TRANSACTION_DB_PORT}:5432"
+    volumes:
+      - postgres-transaction-data:/var/lib/postgresql/data
+    networks:
+      - banking-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TRANSACTION_DB_USER} -d ${TRANSACTION_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-fraud:
+    profiles: [fraud]
+    image: postgres:16-alpine
+    container_name: postgres-fraud
+    environment:
+      POSTGRES_DB: ${FRAUD_DB_NAME}
+      POSTGRES_USER: ${FRAUD_DB_USER}
+      POSTGRES_PASSWORD: ${FRAUD_DB_PASSWORD}
+    ports:
+      - "${FRAUD_DB_PORT}:5432"
+    volumes:
+      - postgres-fraud-data:/var/lib/postgresql/data
+    networks:
+      - banking-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FRAUD_DB_USER} -d ${FRAUD_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ───────────────────────────────────────────────────────────────────
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - banking-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── Kafka + Zookeeper ───────────────────────────────────────────────────────
+
+  zookeeper:
+    profiles: [transaction, fraud]
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - banking-net
+
+  kafka:
+    profiles: [transaction, fraud]
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - banking-net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ─── Application Services ────────────────────────────────────────────────────
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: api-gateway/target/api-gateway-0.0.1-SNAPSHOT.jar
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8081
+      ACCOUNT_SERVICE_URL: http://account-service:8082
+      TRANSACTION_SERVICE_URL: http://transaction-service:8083
+    depends_on:
+      auth-service:
+        condition: service_started
+    networks:
+      - banking-net
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: auth-service/target/auth-service-0.0.1-SNAPSHOT.jar
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    environment:
+      AUTH_DB_HOST: postgres-auth
+      AUTH_DB_PORT: 5432
+      REDIS_HOST: redis
+      JAEGER_HOST: jaeger
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - banking-net
+
+  account-service:
+    profiles: [account, fraud]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: account-service/target/account-service-0.0.1-SNAPSHOT.jar
+    container_name: account-service
+    ports:
+      - "8082:8082"
+    env_file:
+      - .env
+    environment:
+      ACCOUNT_DB_HOST: postgres-account
+      ACCOUNT_DB_PORT: 5432
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      JAEGER_HOST: jaeger
+    depends_on:
+      postgres-account:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - banking-net
+
+  transaction-service:
+    profiles: [transaction]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: transaction-service/target/transaction-service-0.0.1-SNAPSHOT.jar
+    container_name: transaction-service
+    ports:
+      - "8083:8083"
+    env_file:
+      - .env
+    environment:
+      TRANSACTION_DB_HOST: postgres-transaction
+      TRANSACTION_DB_PORT: 5432
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      JAEGER_HOST: jaeger
+    depends_on:
+      postgres-transaction:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - banking-net
+
+  fraud-service:
+    profiles: [fraud]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: fraud-service/target/fraud-service-0.0.1-SNAPSHOT.jar
+    container_name: fraud-service
+    ports:
+      - "8084:8084"
+    env_file:
+      - .env
+    environment:
+      FRAUD_DB_HOST: postgres-fraud
+      FRAUD_DB_PORT: 5432
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      JAEGER_HOST: jaeger
+    depends_on:
+      postgres-fraud:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - banking-net
+
+  # ─── Prometheus + Grafana — metrics ─────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    networks:
+      - banking-net
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - banking-net
+
+  # ─── Jaeger — distributed tracing UI ─────────────────────────────────────────
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    container_name: jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver
+      - "4318:4318"     # OTLP HTTP receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - banking-net
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+
+volumes:
+  postgres-auth-data:
+  postgres-account-data:
+  postgres-transaction-data:
+  postgres-fraud-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+# ─── Network ──────────────────────────────────────────────────────────────────
+
+networks:
+  banking-net:
+    driver: bridge

@@ -1,0 +1,15 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+
+management:
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces

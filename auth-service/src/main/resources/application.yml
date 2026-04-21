@@ -1,0 +1,52 @@
+spring:
+  application:
+    name: auth-service
+
+  mvc:
+    problemdetails:
+      enabled: true
+
+  datasource:
+    url: jdbc:postgresql://${AUTH_DB_HOST:localhost}:${AUTH_DB_PORT:5432}/${AUTH_DB_NAME:auth_db}
+    username: ${AUTH_DB_USER:auth_user}
+    password: ${AUTH_DB_PASSWORD:auth_pass}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: 8081
+
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key-change-in-production-min-32-chars}
+  access-token-expiration: 900
+  refresh-token-expiration: 604800
+
+logging:
+  level:
+    com.banking: INFO
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://${JAEGER_HOST:localhost}:4318/v1/traces
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

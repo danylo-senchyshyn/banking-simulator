@@ -1,0 +1,85 @@
+spring:
+  application:
+    name: transaction-service
+
+  mvc:
+    problemdetails:
+      enabled: true
+
+  datasource:
+    url: jdbc:postgresql://${TRANSACTION_DB_HOST:localhost}:${TRANSACTION_DB_PORT:5434}/${TRANSACTION_DB_NAME:transaction_db}
+    username: ${TRANSACTION_DB_USER:transaction_user}
+    password: ${TRANSACTION_DB_PASSWORD:transaction_pass}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+    consumer:
+      group-id: transaction-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.banking.*"
+        spring.json.value.default.type: com.banking.transaction.service.event.FraudResultEvent
+        spring.json.use.type.headers: false
+
+server:
+  port: 8083
+
+spring.autoconfigure.exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui/index.html
+
+logging:
+  level:
+    com.banking: INFO
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      kafka-outbox:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://${JAEGER_HOST:localhost}:4318/v1/traces
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,circuitbreakers
+  health:
+    circuitbreakers:
+      enabled: true

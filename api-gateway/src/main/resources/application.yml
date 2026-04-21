@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: api-gateway
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: false
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 20
+            redis-rate-limiter.burstCapacity: 40
+            redis-rate-limiter.requestedTokens: 1
+            key-resolver: "#{@ipKeyResolver}"
+      routes:
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/auth/**
+
+        - id: account-service
+          uri: ${ACCOUNT_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/accounts/**
+
+        - id: transaction-service
+          uri: ${TRANSACTION_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/transactions/**
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
+
+logging:
+  level:
+    com.banking: DEBUG
+
+server:
+  port: 8080
+
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key-change-in-production-min-32-chars}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://${JAEGER_HOST:localhost}:4318/v1/traces

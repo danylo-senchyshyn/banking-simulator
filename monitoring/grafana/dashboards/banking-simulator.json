@@ -1,0 +1,144 @@
+{
+  "title": "Banking Simulator",
+  "uid": "banking-simulator",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP RPS by service",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count[1m])) by (job)",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP p99 latency by service (s)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket[1m])) by (job, le))",
+          "legendFormat": "{{job}} p99"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "HTTP Error Rate (5xx) by service",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[1m])) by (job)",
+          "legendFormat": "{{job}} 5xx"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Transactions Created / Completed / Blocked",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(transaction_created_count_total[1m])",
+          "legendFormat": "created/s"
+        },
+        {
+          "expr": "rate(transaction_completed_count_total[1m])",
+          "legendFormat": "completed/s"
+        },
+        {
+          "expr": "rate(transaction_blocked_count_total[1m])",
+          "legendFormat": "blocked/s"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Fraud Rejected / second",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(fraud_rejected_count_total[1m])",
+          "legendFormat": "rejected/s"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Outbox Pending Events",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "outbox_pending_size",
+          "legendFormat": "pending"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "thresholds": {
+          "steps": [
+            { "value": 0, "color": "green" },
+            { "value": 10, "color": "yellow" },
+            { "value": 50, "color": "red" }
+          ]
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Circuit Breaker State (kafka-outbox)",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "resilience4j_circuitbreaker_state{name=\"kafka-outbox\"}",
+          "legendFormat": "{{state}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "JVM Heap Used by service (bytes)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "jvm_memory_used_bytes{area=\"heap\"}",
+          "legendFormat": "{{job}} heap"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Kafka Consumer Lag",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "kafka_consumer_fetch_manager_records_lag{job=~\".*-service\"}",
+          "legendFormat": "{{job}} {{topic}}"
+        }
+      ]
+    }
+  ]
+}
