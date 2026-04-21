@@ -21,6 +21,9 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Install parent POM
+        run: mvn install -N -q --no-transfer-progress
+
       - name: Build common module
         run: mvn install -pl common -q --no-transfer-progress
 
@@ -46,6 +49,9 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
+
+      - name: Install parent POM
+        run: mvn install -N -q --no-transfer-progress
 
       - name: Build common module
         run: mvn install -pl common -q --no-transfer-progress
